@@ -2,13 +2,14 @@
 
 namespace AmoPRO\AmoCRM\Auth;
 
-use AmoCRM\OAuth2\Client\Provider\AmoCRM;
+use AmoCRM\OAuth2\Client\Provider\AmoCRMException;
+use AmoPRO\AmoCRM\Exceptions\Http\UnauthorizedException;
 use AmoPRO\AmoCRM\Exceptions\WrongDomainException;
-use GuzzleHttp\Client as HttpClient;
-use GuzzleHttp\RequestOptions;
 use League\OAuth2\Client\Grant\AuthorizationCode;
 use League\OAuth2\Client\Grant\RefreshToken;
+use League\OAuth2\Client\Provider\ResourceOwnerInterface;
 use League\OAuth2\Client\Token\AccessToken;
+use Psr\Log\LoggerInterface;
 
 class Auth
 {
@@ -16,8 +17,6 @@ class Auth
     private $domain;
     /** @var \League\OAuth2\Client\Token\AccessToken $accessToken */
     private $accessToken;
-    /** @var \AmoCRM\OAuth2\Client\Provider\AmoCRM $provider */
-    private $provider;
     /** @var string $authorizationCode */
     private $authorizationCode;
     /** @var callable[] $listeners */
@@ -33,16 +32,10 @@ class Auth
     {
         $this->domain = $this->prepareDomain($domain);
 
-        $providerData = $client->toArray();
-        $providerData['baseDomain'] = substr($this->domain, 8);
-        $providerData['state'] = uniqid('amo-', true);
-        $this->provider = new AmoCRM($providerData, [
-            'httpClient' => new HttpClient([
-                RequestOptions::VERIFY => false,
-                RequestOptions::TIMEOUT => 100,
-                RequestOptions::CONNECT_TIMEOUT => 100
-            ])
-        ]);
+        $this->providerFactory = new ProviderFactory(
+            substr($this->domain, 8), // clean protocol "https://"
+            $client
+        );
     }
 
     /**
@@ -103,13 +96,15 @@ class Auth
     }
 
     /**
+     * @param \Psr\Log\LoggerInterface|null $logger
      * @return bool
      * @throws \League\OAuth2\Client\Provider\Exception\IdentityProviderException
      */
-    public function requestNewToken(): bool
+    public function requestNewToken(?LoggerInterface $logger = null): bool
     {
-        if ($this->accessToken && ($refreshToken = $this->accessToken->getRefreshToken())) {
-            $this->setAccessToken($this->provider->getAccessToken(new RefreshToken(), [
+        $provider = $this->providerFactory->make($logger);
+        if ($this->getAccessToken() && ($refreshToken = $this->getAccessToken()->getRefreshToken())) {
+            $this->setAccessToken($provider->getAccessToken(new RefreshToken(), [
                 'refresh_token' => $refreshToken
             ]));
             $this->triggerUpdated();
@@ -118,7 +113,7 @@ class Auth
         }
 
         if ($this->authorizationCode) {
-            $this->setAccessToken($this->provider->getAccessToken(new AuthorizationCode(), [
+            $this->setAccessToken($provider->getAccessToken(new AuthorizationCode(), [
                 'code' => $this->authorizationCode
             ]));
             $this->triggerUpdated();
@@ -127,6 +122,46 @@ class Auth
         }
 
         return false;
+    }
+
+    /**
+     * @param \Psr\Log\LoggerInterface|null $logger
+     * @return \League\OAuth2\Client\Provider\ResourceOwnerInterface
+     * @throws \AmoCRM\OAuth2\Client\Provider\AmoCRMException
+     */
+    public function getResourceOwner(?LoggerInterface $logger = null): ResourceOwnerInterface
+    {
+        return $this->retrieveResourceOwner($logger);
+    }
+
+    /**
+     * @param \Psr\Log\LoggerInterface|null $logger
+     * @param int $attempt
+     * @return \League\OAuth2\Client\Provider\ResourceOwnerInterface
+     * @throws \AmoCRM\OAuth2\Client\Provider\AmoCRMException
+     * @throws \AmoPRO\AmoCRM\Exceptions\Http\UnauthorizedException
+     */
+    private function retrieveResourceOwner(?LoggerInterface $logger, $attempt = 1): ResourceOwnerInterface
+    {
+        if ($this->getAccessToken() === null && !empty($this->authorizationCode)) {
+            $this->requestNewToken($logger);
+        }
+
+        if ($this->getAccessToken()) {
+            try {
+                return $this->providerFactory->make($logger)->getResourceOwner($this->getAccessToken());
+            } /** @noinspection PhpRedundantCatchClauseInspection */
+            catch (AmoCRMException $e) {
+                if ($attempt < 5) {
+                    usleep(200000);
+
+                    return $this->retrieveResourceOwner($logger, $attempt + 1);
+                }
+                throw $e;
+            }
+        }
+
+        throw new UnauthorizedException("For retrieve resource owner needs AccessToken or AuthorizationCode");
     }
 
     /**

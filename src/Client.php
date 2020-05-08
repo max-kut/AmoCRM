@@ -131,8 +131,8 @@ class Client
         try {
             return $this->httpClient->send($request);
         } catch (UnauthorizedException $exception) {
-            if($this->auth->requestNewToken() && $attempt < 5){
-                usleep(500000);
+            if($attempt < 5 && $this->auth->requestNewToken($this->logger)){
+                usleep(200000);
                 return $this->getResponse($request, $attempt + 1);
             }
 

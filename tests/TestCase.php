@@ -14,6 +14,11 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase
 {
     const ENV_PATH = __DIR__ . '/../.env';
 
+    protected static $AMO_DOMAIN;
+    protected static $ACCESS_TOKEN;
+    protected static $REFRESH_TOKEN;
+    protected static $AUTHORIZATION_CODE;
+
     /**
      * @var \AmoPRO\AmoCRM\Client
      */
@@ -26,10 +31,10 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase
     protected function setUp(): void
     {
         (new Dotenv())->load(self::ENV_PATH);
-        $AMO_DOMAIN = $_ENV['AMO_DOMAIN'] ?? null;
-        $ACCESS_TOKEN = $_ENV['ACCESS_TOKEN'] ?? null;
-        $REFRESH_TOKEN = $_ENV['REFRESH_TOKEN'] ?? null;
-        $AUTHORIZATION_CODE = $_ENV['AUTHORIZATION_CODE'] ?? null;
+        self::$AMO_DOMAIN = $_ENV['AMO_DOMAIN'] ?? null;
+        self::$ACCESS_TOKEN = $_ENV['ACCESS_TOKEN'] ?? null;
+        self::$REFRESH_TOKEN = $_ENV['REFRESH_TOKEN'] ?? null;
+        self::$AUTHORIZATION_CODE = $_ENV['AUTHORIZATION_CODE'] ?? null;
 
         $CLIENT_ID = $_ENV['CLIENT_ID'] ?? '';
         $CLIENT_SECRET = $_ENV['CLIENT_SECRET'] ?? '';
@@ -37,45 +42,50 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase
 
         $this->amoClientData = new AmoClientData($CLIENT_ID, $CLIENT_SECRET, $REDIRECT_URL);
 
-        if ($AMO_DOMAIN && ($ACCESS_TOKEN || $REFRESH_TOKEN || $AUTHORIZATION_CODE)) {
-            $auth = (new Auth($AMO_DOMAIN, $this->amoClientData));
-
-            if ($ACCESS_TOKEN || $REFRESH_TOKEN) {
-                $auth->setAccessToken(new AccessToken([
-                    'access_token'  => $ACCESS_TOKEN ?? 'empty',
-                    'refresh_token' => $REFRESH_TOKEN
-                ]));
-            }
-
-            if ($AUTHORIZATION_CODE) {
-                $auth->setAuthorizationCode($AUTHORIZATION_CODE);
-            }
-
-            $auth->tokenUpdated(function (AccessToken $token) {
-                $env = explode(PHP_EOL, file_get_contents(self::ENV_PATH));
-                foreach ($env as $i => $line) {
-                    if (preg_match('/ACCESS_TOKEN=/i', $line)) {
-                        $env[$i] = 'ACCESS_TOKEN=' . $token->getToken();
-                    }
-                    if (preg_match('/REFRESH_TOKEN=/', $line)) {
-                        $env[$i] = 'REFRESH_TOKEN=' . $token->getRefreshToken();
-                    }
-                    // clean AUTHORIZATION_CODE
-                    if (preg_match('/AUTHORIZATION_CODE=/', $line)) {
-                        $env[$i] = 'AUTHORIZATION_CODE=';
-                    }
-                }
-
-                file_put_contents(self::ENV_PATH, implode(PHP_EOL, $env));
-            });
-
-            $this->client = new Client($auth, $this->_getLogger());
+        if (self::$AMO_DOMAIN && (self::$ACCESS_TOKEN || self::$REFRESH_TOKEN || self::$AUTHORIZATION_CODE)) {
+            $this->client = new Client($this->_getAuth(), $this->_getLogger());
         } else {
             $this->client = new FakeClient(new Auth('test', $this->amoClientData), new FakeLogger());
         }
     }
 
-    private function _getLogger()
+    protected function _getAuth()
+    {
+        $auth = (new Auth(self::$AMO_DOMAIN, $this->amoClientData));
+
+        if (self::$ACCESS_TOKEN || self::$REFRESH_TOKEN) {
+            $auth->setAccessToken(new AccessToken([
+                'access_token'  => self::$ACCESS_TOKEN ?? 'empty',
+                'refresh_token' => self::$REFRESH_TOKEN
+            ]));
+        }
+
+        if (self::$AUTHORIZATION_CODE) {
+            $auth->setAuthorizationCode(self::$AUTHORIZATION_CODE);
+        }
+
+        $auth->tokenUpdated(function (AccessToken $token) {
+            $env = explode(PHP_EOL, file_get_contents(self::ENV_PATH));
+            foreach ($env as $i => $line) {
+                if (preg_match('/ACCESS_TOKEN=/i', $line)) {
+                    $env[$i] = 'ACCESS_TOKEN=' . $token->getToken();
+                }
+                if (preg_match('/REFRESH_TOKEN=/', $line)) {
+                    $env[$i] = 'REFRESH_TOKEN=' . $token->getRefreshToken();
+                }
+                // clean AUTHORIZATION_CODE
+                if (preg_match('/AUTHORIZATION_CODE=/', $line)) {
+                    $env[$i] = 'AUTHORIZATION_CODE=';
+                }
+            }
+
+            file_put_contents(self::ENV_PATH, implode(PHP_EOL, $env));
+        });
+
+        return $auth;
+    }
+
+    protected function _getLogger()
     {
         $log = new Logger('name');
         $log->pushHandler(new StreamHandler(__DIR__ . '/../test.log', Logger::DEBUG));
