@@ -103,7 +103,12 @@ abstract class Obj implements JsonSerializable
      */
     public function jsonSerialize()
     {
-        return $this->attributes;
+        return array_map(function($value){
+            if($value instanceof JsonSerializable){
+                return $value->jsonSerialize();
+            }
+            return $value;
+        }, $this->attributes);
     }
 
     /**

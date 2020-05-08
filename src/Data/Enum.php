@@ -3,8 +3,9 @@
 namespace AmoPRO\AmoCRM\Data;
 
 use InvalidArgumentException;
+use JsonSerializable;
 
-abstract class Enum
+abstract class Enum implements JsonSerializable
 {
     /**
      * @return array associative values
@@ -68,5 +69,13 @@ abstract class Enum
     public function sameAs(self $enum): bool
     {
         return $this->value === $enum->getValue();
+    }
+
+    /**
+     * @return mixed
+     */
+    public function jsonSerialize()
+    {
+        return $this->value;
     }
 }
