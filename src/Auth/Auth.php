@@ -21,6 +21,8 @@ class Auth
     private $authorizationCode;
     /** @var callable[] $listeners */
     private $listeners = [];
+    /** @var \AmoPRO\AmoCRM\Auth\ProviderFactory $providerFactory */
+    private $providerFactory;
 
     /**
      * Auth constructor.
