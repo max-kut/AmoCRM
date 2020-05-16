@@ -115,9 +115,7 @@ class Client
      */
     public function send(RequestInterface $request): ResponseInterface
     {
-        return $this->getResponse(
-            $request->withHeader('Authorization', 'Bearer ' . $this->auth->getAccessToken())
-        );
+        return $this->getResponse($request);
     }
 
     /**
@@ -129,7 +127,9 @@ class Client
     private function getResponse(RequestInterface $request, $attempt = 1): ResponseInterface
     {
         try {
-            return $this->httpClient->send($request);
+            return $this->httpClient->send(
+                $request->withHeader('Authorization', 'Bearer ' . $this->auth->getAccessToken())
+            );
         } catch (UnauthorizedException $exception) {
             if($attempt < 5 && $this->auth->requestNewToken($this->logger)){
                 usleep(200000);
