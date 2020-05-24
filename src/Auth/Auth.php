@@ -105,18 +105,18 @@ class Auth
     public function requestNewToken(?LoggerInterface $logger = null): bool
     {
         $provider = $this->providerFactory->make($logger);
-        if ($this->getAccessToken() && ($refreshToken = $this->getAccessToken()->getRefreshToken())) {
-            $this->setAccessToken($provider->getAccessToken(new RefreshToken(), [
-                'refresh_token' => $refreshToken
+        if ($this->authorizationCode) {
+            $this->setAccessToken($provider->getAccessToken(new AuthorizationCode(), [
+                'code' => $this->authorizationCode
             ]));
             $this->triggerUpdated();
 
             return true;
         }
 
-        if ($this->authorizationCode) {
-            $this->setAccessToken($provider->getAccessToken(new AuthorizationCode(), [
-                'code' => $this->authorizationCode
+        if ($this->getAccessToken() && ($refreshToken = $this->getAccessToken()->getRefreshToken())) {
+            $this->setAccessToken($provider->getAccessToken(new RefreshToken(), [
+                'refresh_token' => $refreshToken
             ]));
             $this->triggerUpdated();
 
@@ -154,7 +154,7 @@ class Auth
                 return $this->providerFactory->make($logger)->getResourceOwner($this->getAccessToken());
             } /** @noinspection PhpRedundantCatchClauseInspection */
             catch (AmoCRMException $e) {
-                if ($attempt < 5) {
+                if ($attempt < 5 && $this->requestNewToken($logger)) {
                     usleep(200000);
 
                     return $this->retrieveResourceOwner($logger, $attempt + 1);
